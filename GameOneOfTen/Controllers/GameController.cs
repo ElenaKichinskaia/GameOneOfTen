@@ -1,8 +1,14 @@
 ﻿using GameOneOfTen.BusinessLayer;
 using GameOneOfTen.Models;
 using GameOneOfTen.Models.APIModels;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Extensions;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Security.Claims;
+using System.Text;
 
 namespace GameOneOfTen.Controllers
 {
@@ -36,40 +42,123 @@ namespace GameOneOfTen.Controllers
         }
 
         /// <summary>
-        /// Retrieves the current balance of a player.
+        /// Creates a new player with the provided username and password.
         /// </summary>
         /// <remarks>
-        /// Sample request: GET /balance/1
+        /// Sample request:
+        ///     POST /api/players
+        ///     {
+        ///         "userName": "example",
+        ///         "password": "example password"
+        ///     }
         /// </remarks>
-        /// <param name="playerId">The Id of the player.</param>
-        /// <returns>
-        /// Returns the current balance of the player if successful.
-        /// If the player ID is invalid, returns a BadRequest response with an error message.
-        /// If an error occurs during processing, returns a StatusCode 500 response with an error message.
-        /// </returns>
-        [HttpGet("balance/{playerId}", Name = "GetCurrentBalance")]
-        [ProducesResponseType(typeof(int), 200)]
-        [ProducesResponseType(typeof(string), 400)]
-        [ProducesResponseType(typeof(string), 500)]
-        public ActionResult<int> GetCurrentBalance(int playerId)
+        /// <param name="userName">The username of the new player.</param>
+        /// <param name="password">The password of the new player.</param>
+        /// <returns>A response containing a success message if the account was created successfully.</returns>
+        /// <response code="201">Returns the newly created player.</response>
+        /// <response code="400">If the request data is invalid.</response>
+        /// <response code="500">If there was an internal server error.</response>
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [HttpPost("players", Name = "CreatePlayer")]
+        public ActionResult CreatePlayer(string userName, string password)
         {
             try
             {
-                // Validate input parameters
-                if (playerId <= 0)
-                {
-                    // Log invalid input
-                    _logger.LogWarning($"Invalid player ID: {playerId}");
+                // Here, validate the loginModel against your user store. This example assumes validation is successful.
 
-                    // Return bad request response
-                    return BadRequest("Invalid player ID");
+                var player = _gameProcess.CreatePlayer(userName, password);
+                if (player == null)
+                {
+                    // Log any exceptions
+                    _logger.LogError($"Attempted to create a new user with a username that is already taken.");
+
+                    // Return internal server error response
+                    return StatusCode(400, "Sorry, the username you selected is already in use. Please choose a different username.");
                 }
-                return _gameProcess.GetBalance(playerId);
+
+                return StatusCode(201, new
+                {
+                    message = "Your account has been successfully created. Please log in to start playing the game."
+                });
             }
             catch (Exception ex)
             {
                 // Log any exceptions
-                _logger.LogError($"Error occurred while retrieving balance for player with Id {playerId}: {ex.Message}");
+                _logger.LogError($"Error occurred while creating of new user with credentials: Login: {userName}: {ex.Message}");
+
+                // Return internal server error response
+                return StatusCode(500, "An error occurred while processing your request");
+            }
+        }
+
+        /// <summary>
+        /// Logs in an existing player with the provided credentials.
+        /// </summary>
+        /// <remarks>
+        /// Sample request:
+        ///     POST /api/login
+        ///     {
+        ///         "userName": "example",
+        ///         "password": "example password"
+        ///     }
+        /// </remarks>
+        /// <param name="userName">The username of the player.</param>
+        /// <param name="password">The password of the player.</param>
+        /// <returns>A response containing an authentication token if login is successful.</returns>
+        /// <response code="200">Returns an authentication token if login is successful.</response>
+        /// <response code="400">If the request data is invalid.</response>
+        /// <response code="401">If login fails due to incorrect credentials.</response>
+        /// <response code="500">If there was an internal server error.</response>
+        [HttpPost("login", Name = "Login")]
+        public ActionResult Login(string userName, string password)
+        {
+            try
+            {
+                // Here, validate the loginModel against your user store. This example assumes validation is successful.
+
+                var playerId = _gameProcess.IsPlayerExists(userName, password);
+                if (playerId == null)
+                {
+                    // Log any exceptions
+                    _logger.LogError($"Attempted login by client with unrecognized credentials: {userName}");
+
+                    // Return internal server error response
+                    return StatusCode(401, "Your login attempt was unsuccessful. Please check your credentials and try again.");
+                }
+
+                var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, userName),
+                new Claim(JwtRegisteredClaimNames.NameId, playerId.Value.ToString()),
+                new Claim("admin", "true"),
+                new Claim(JwtRegisteredClaimNames.Iat, new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            };
+
+                var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("MyVeryLongAndSecretJwtKeyIWouldntKeepHereInRealApp"));
+
+                var token = new JwtSecurityToken(
+                    // issuer: config["Jwt:Issuer"],
+                    // audience: config["Jwt:Audience"],
+                    issuer: "Jwt:Issuer",
+                    audience: "Jwt:Audience",
+                    expires: DateTime.UtcNow.AddHours(2),
+                    claims: claims,
+                    signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
+                );
+
+                return StatusCode(200, new
+                {
+                    message = "Enjoy playing!",
+                    token = new JwtSecurityTokenHandler().WriteToken(token),
+                    expiration = token.ValidTo
+                });
+            }
+            catch (Exception ex)
+            {
+                // Log any exceptions
+                _logger.LogError($"Error occurred while login of user with credentials: Login: {userName}: {ex.Message}");
 
                 // Return internal server error response
                 return StatusCode(500, "An error occurred while processing your request");
@@ -83,16 +172,16 @@ namespace GameOneOfTen.Controllers
         /// Sample request:
         ///     POST /bet
         ///     {
-        ///         "playerId": 1,
         ///         "number": 10,
         ///         "points": 50
         ///     }
         /// </remarks>
-        /// <param name="betRequest">The bet request containing player Id, chosen number, and points to bet.</param>
+        /// <param name="betRequest">The bet request containing chosen number, and points to bet.</param>
         /// <returns>
         /// Returns a BetResponse indicating the status of the bet and the points won or lost.
         /// </returns>
-        [HttpPost("bet", Name = "MakeBet")]
+        [Authorize]
+        [HttpPost("bets", Name = "MakeBet")]
         [ProducesResponseType(typeof(BetResponse), 200)]
         public ActionResult<BetResponse> MakeBet(BetRequest betRequest)
         {
@@ -107,15 +196,6 @@ namespace GameOneOfTen.Controllers
 
                     // Return bad request response
                     return BadRequest("Bet request cannot be null.");
-                }
-                
-                if (betRequest.PlayerId <= 0)
-                {
-                    // Log invalid input
-                    _logger.LogWarning($"Invalid player Id: {betRequest.PlayerId}");
-
-                    // Return bad request response
-                    return BadRequest("Player Id must be a positive integer.");
                 }
 
                 if (betRequest.Number < 0 || betRequest.Number > 9)
@@ -136,10 +216,21 @@ namespace GameOneOfTen.Controllers
                     return BadRequest("Points must be a positive integer.");
                 }
 
+                int playerId = GetPlayerIdFromToken(Request.Headers["Authorization"]);
+
+                if (playerId == 0)
+                {
+                    // Log invalid input
+                    _logger.LogWarning($"Invalid credentials: Player's id from the header.");
+
+                    // Return bad request response
+                    return BadRequest("Invalid credentials.");
+                }
+
                 // Create a new Bet instance from the bet request
                 var bet = new Bet()
                 {
-                    PlayerId = betRequest.PlayerId,
+                    PlayerId = playerId,
                     Number = betRequest.Number,
                     Value = betRequest.Points
                 };
@@ -148,9 +239,9 @@ namespace GameOneOfTen.Controllers
                 // Create a BetResponse from the bet result
                 var betResponse = new BetResponse
                 {
-                    PlayerId = betRequest.PlayerId,
+                    Account = betRecord.Player.Balance.ToString(),
                     Status = betRecord.Result.GetDisplayName(),
-                    Points = betRecord.Value
+                    Points = betRecord.Value.ToString()
                 };
 
                 return new ActionResult<BetResponse>(betResponse);
@@ -158,11 +249,31 @@ namespace GameOneOfTen.Controllers
             catch (Exception ex)
             {
                 // Log any exceptions
-                _logger.LogError($"Error occurred while making bet for player with Id {betRequest.PlayerId}: {ex.Message}");
+                _logger.LogError($"Error occurred while making bet: {ex.Message}");
 
                 // Return internal server error response
                 return StatusCode(500, "An error occurred while processing your request");
             }
+        }
+
+
+        /******************************** private methods ************************************/
+
+        /// <summary>
+        ///  Retrieves the player's Id from the authorization token provided in the request header.        
+        ///  This method parses the authorization header to extract the player's Id.
+        /// </summary>
+        /// <param name="authorizationHeader">Authorization header containing the token</param>
+        /// <returns>The player's Id extracted from the token, or 0 if extraction fails or Id is not found</returns>
+        private int GetPlayerIdFromToken(string authorizationHeader)
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var authHeader = authorizationHeader.Replace("Bearer ", "");
+            var jsonToken = handler.ReadToken(authHeader);
+            var tokenS = handler.ReadToken(authHeader) as JwtSecurityToken;
+            var id = tokenS.Claims.First(claim => claim.Type == "nameid").Value;
+
+            return id != null ? int.Parse(id) : 0;
         }
     }
 }

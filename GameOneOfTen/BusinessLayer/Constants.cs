@@ -11,5 +11,6 @@
         public const int StartRangeOfNumbers = 0;
         public const int EndRangeOfNumbers = 9;
         public const int WinTimesCount = 9;
+        public const int DefaultStartBalance = 10000;
     }
 }

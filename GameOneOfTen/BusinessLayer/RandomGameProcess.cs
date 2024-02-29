@@ -1,18 +1,71 @@
-﻿using GameOneOfTen.DbLayer;
+﻿using GameOneOfTen.Controllers;
+using GameOneOfTen.DbLayer;
 using GameOneOfTen.Models;
 
 namespace GameOneOfTen.BusinessLayer
 {
+    /// <summary>
+    /// Class responsible for managing the game process, handling functions such as making bets and 
+    /// retrieving player balances, as defined by the provided interface.
+    /// </summary>
     public class RandomGameProcess : IGameProcess
     {
         private IDataService _dataService;
-        public RandomGameProcess(IDataService dataService)
+        private readonly ILogger<RandomGameProcess> _logger;
+
+        public RandomGameProcess(ILogger<RandomGameProcess> logger, IDataService dataService)
         {
+            _logger = logger;
             _dataService = dataService;
         }
 
-        public Player CreatePlayer(Player player) {
-            return _dataService.CreatePlayer(player);
+        /// <summary>
+        /// Checks if a player with the provided username and password exists in the system.
+        /// </summary>
+        /// <param name="userName">The username of the player.</param>
+        /// <param name="password">The password of the player.</param>
+        /// <returns>The player's Id if a matching player is found, otherwise null.</returns>
+        public int? IsPlayerExists(string userName, string password)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(password))
+                {
+                    return null;
+                }
+                return _dataService.IsPlayerExists(userName, password);
+            }
+            catch (Exception ex)
+            {
+                // Log any exceptions
+                _logger.LogError($"An error occurred while checking if player with userName {userName} exists: {ex.Message}");
+                throw; 
+            }
+        }
+
+        /// <summary>
+        /// Creates a new player account with the provided username and password.
+        /// </summary>
+        /// <param name="userName">The username of the new player.</param>
+        /// <param name="password">The password of the new player.</param>
+        /// <returns>The newly created player object.</returns>
+        public Player CreatePlayer(string userName, string password)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(password) ||
+                _dataService.IsPlayerNameExists(userName))
+                {
+                    return null;
+                }
+                return _dataService.CreatePlayer(userName, password, Constants.DefaultStartBalance);
+            }
+            catch (Exception ex)
+            {
+                // Log any exceptions
+                _logger.LogError($"An error occurred while creating player with userName {userName}: {ex.Message}");
+                throw; 
+            }
         }
 
         /// <summary>
@@ -22,35 +75,37 @@ namespace GameOneOfTen.BusinessLayer
         /// <returns>The bet history entity if the bet was made successfully; otherwise, null.</returns>
         public BetHistory? MakeBet(Bet bet)
         {
-            var balance = _dataService.GetBalance(bet.PlayerId);
-            if (balance >= bet.Value)
+            try
             {
-                var currentNumber = GenerateNumber(Constants.StartRangeOfNumbers, Constants.EndRangeOfNumbers);
-                var betHistoryRecord = new BetHistory()
+                if (bet == null || bet.Number < Constants.StartRangeOfNumbers || bet.Number > Constants.EndRangeOfNumbers)
                 {
-                    Number = bet.Number,
-                    Value = currentNumber == bet.Number ? bet.Value * Constants.WinTimesCount : -bet.Value,
-                    Result = currentNumber == bet.Number ? BetStatus.Won : BetStatus.Lost,
-                    PlayerId = bet.PlayerId,
-                    Date = DateTime.Now
-                };
-                return _dataService.CreateBet(betHistoryRecord);
+                    return null;
+                }
+                var balance = _dataService.GetBalance(bet.PlayerId);
+                if (balance >= bet.Value)
+                {
+                    var currentNumber = GenerateNumber(Constants.StartRangeOfNumbers, Constants.EndRangeOfNumbers);
+                    var betHistoryRecord = new BetHistory()
+                    {
+                        Number = bet.Number,
+                        Value = currentNumber == bet.Number ? bet.Value * Constants.WinTimesCount : -bet.Value,
+                        Result = currentNumber == bet.Number ? BetStatus.Won : BetStatus.Lost,
+                        PlayerId = bet.PlayerId,
+                        Date = DateTime.Now
+                    };
+                    return _dataService.CreateBet(betHistoryRecord);
+                }
+                return null;
             }
-            return null;
+            catch (Exception ex)
+            {
+                // Log any exceptions
+                _logger.LogError($"An error occurred while making a bet for player with Id {bet.PlayerId}: {ex.Message}");
+                throw;
+            }
         }
 
-        /// <summary>
-        /// Implements the logic for retrieving the balance of a player.
-        /// </summary>
-        /// <param name="playerId">The Id of the player.</param>
-        /// <returns>The balance of the specified player.</returns>
-        public int GetBalance(int playerId)
-        {
-            return _dataService.GetBalance(playerId);
-        }
-
-
-        /********* Private methods ***********/
+        #region Private methods 
 
         /// <summary>
         /// Generates a random number within the specified range of numbers.
@@ -69,5 +124,7 @@ namespace GameOneOfTen.BusinessLayer
             // Return the generated random number
             return num;
         }
+
+        #endregion
     }
 }

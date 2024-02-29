@@ -13,9 +13,6 @@ namespace GameOneOfTen.DbLayer
         /// </summary>
         public DbSet<Player> Players { get; set; } = null!;
 
-        /// <summary>
-        /// Gets or sets the DbSet for accessing Bet's History entities in the database.
-        /// </summary>
         public DbSet<BetHistory> BetHistories { get; set; } = null!;
 
         /// <summary>
