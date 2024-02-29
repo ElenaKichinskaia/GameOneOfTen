@@ -1,6 +1,6 @@
 @GameOneOfTen_HostAddress = http://localhost:5036
 
-GET {{GameOneOfTen_HostAddress}}/weatherforecast/
+GET {{GameOneOfTen_HostAddress}}/
 Accept: application/json
 
 ###
