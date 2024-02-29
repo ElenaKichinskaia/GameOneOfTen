@@ -7,6 +7,7 @@ This README file outlines the two main steps to start the project.
 Before running the project, it's necessary to configure the connection string in the appsettings.json file.
 
 Example appsettings.json file:
+```
 {
   "ConnectionStrings": {
     "DefaultConnection": "Server=localhost;Database=YourDatabaseName;User=YourUsername;Password=YourPassword;"
@@ -20,6 +21,7 @@ Example appsettings.json file:
   },
   "AllowedHosts": "*"
 }
+```
 
 Replace "YourDatabaseName", "YourUsername", and "YourPassword" with the corresponding values of your database.
 
@@ -31,11 +33,11 @@ Open the command prompt or terminal in the project directory and execute the fol
 
 To apply all available migrations:
 
-dotnet ef database update
+`dotnet ef database update`
 
 To create a new migration (if there are changes in the models):
 
-dotnet ef migrations add <MigrationName>
+`dotnet ef migrations add <MigrationName>`
 
 Where <MigrationName> is the name of the new migration.
 
